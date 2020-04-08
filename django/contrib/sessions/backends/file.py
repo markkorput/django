@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import tempfile
+from contextlib import suppress
 
 from django.conf import settings
 from django.contrib.sessions.backends.base import (

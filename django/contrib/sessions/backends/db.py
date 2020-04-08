@@ -33,6 +33,7 @@ class SessionStore(SessionBase):
                 session_key=self.get_session_key_hash(self.session_key),
                 expire_date__gt=timezone.now()
             )
+            return s
         except (self.model.DoesNotExist, SuspiciousOperation) as e:
             if isinstance(e, SuspiciousOperation):
                 logger = logging.getLogger('django.security.%s' % e.__class__.__name__)

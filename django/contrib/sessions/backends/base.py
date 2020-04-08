@@ -26,7 +26,7 @@ VALID_KEY_CHARS = string.ascii_lowercase + string.digits
 SESSION_KEY_DELIMITER = '$'
 # this should be available in hashlib
 SESSION_HASHING_ALGORITHM = 'md5'
-
+SESSION_HASHED_KEY_PREFIX = SESSION_HASHING_ALGORITHM + SESSION_KEY_DELIMITER
 
 class CreateError(Exception):
     """
@@ -179,38 +179,47 @@ class SessionBase:
         except AttributeError:
             return True
 
+
+
     def _get_session_key_part(self, session_key):
-        "Return a string of the session_key key."
-        return session_key.split(SESSION_KEY_DELIMITER)[1]
+        """
+        Return the key part of the session_key by removing the hash prefix.
+        """
+        if session_key.startswith(SESSION_HASHED_KEY_PREFIX):
+            return session_key[len(SESSION_HASHED_KEY_PREFIX):]
+        return None
 
     def _is_hashed(self, session_key):
-        "Return True when the session_key is hashed in the backend."
-        try:
-            return bool(self._get_session_key_part(session_key))
-        except IndexError:
-            return False
+        """Return True when the session_key is hashed in the backend."""
+        return session_key.startswith(SESSION_HASHED_KEY_PREFIX)
 
     def get_session_key_hash(self, session_key):
         """
-        Return a hash of the session key to be stored in the db. We want a fast
-        hashing function to minimize the impact on performance. We don't have to
-        worry about speed and salting since the session_key is already high entropy.
+        Return a hash of the session key to be stored in the db.
+        
+        We want a fast hashing function to minimize the impact on
+        performance. We don't have to worry about speed and salting
+        since the session_key is already high entropy.
         """
-        if session_key is not None:
-            if self._is_hashed(session_key):
-                return self._session_hashing_algorithm(
-                    self._get_session_key_part(session_key).encode('ascii')).hexdigest()
+        if session_key is None:
+            return None
+        if not self._is_hashed(session_key):
             return session_key
-        return None
+        return self._session_hashing_algorithm(
+            self._get_session_key_part(session_key).encode('ascii')).hexdigest()
+
+
+
 
     def _get_new_session_key(self):
         "Return session key that isn't being used."
         while True:
             session_key = get_random_string(32, VALID_KEY_CHARS)
-            if not self.exists(session_key):
+            hashed_session_key = SESSION_HASHED_KEY_PREFIX + session_key
+            if not self.exists(session_key) and not (settings.SESSION_STORE_KEY_HASH and self.exists(hashed_session_key)):
                 break
         if settings.SESSION_STORE_KEY_HASH:
-            session_key = SESSION_HASHING_ALGORITHM + SESSION_KEY_DELIMITER + session_key
+            return hashed_session_key
         return session_key
 
     def _get_or_create_session_key(self):
@@ -220,9 +229,11 @@ class SessionBase:
 
     def _validate_session_key(self, key):
         """
-        Key must be truthy and at least 8 characters long. 8 characters is an
-        arbitrary lower bound for some minimal key security.
+        Key must be truthy and at least 8 characters long and
+        in the correct format if hashing is required.
         """
+        if settings.SESSION_REQUIRE_KEY_HASH:
+            return key and self._get_session_key_part(key) and len(key) >= 8
         return key and len(key) >= 8
 
     def _get_session_key(self):
