@@ -420,7 +420,7 @@ class DatabaseSessionTests(SessionTestsMixin, TestCase):
         self.session['x'] = 1
         self.session.save()
 
-        session_key = self.session.get_session_key_hash(self.session.session_key)
+        session_key = self.session.get_backend_key(self.session.session_key)
         s = self.model.objects.get(session_key=session_key)
 
         self.assertEqual(str(s), session_key)
@@ -433,7 +433,7 @@ class DatabaseSessionTests(SessionTestsMixin, TestCase):
         self.session['x'] = 1
         self.session.save()
 
-        session_key = self.session.get_session_key_hash(self.session.session_key)
+        session_key = self.session.get_backend_key(self.session.session_key)
         s = self.model.objects.get(session_key=session_key)
 
         self.assertEqual(s.get_decoded(), {'x': 1})
@@ -446,7 +446,7 @@ class DatabaseSessionTests(SessionTestsMixin, TestCase):
         self.session['y'] = 1
         self.session.save()
 
-        session_key = self.session.get_session_key_hash(self.session.session_key)
+        session_key = self.session.get_backend_key(self.session.session_key)
         s = self.model.objects.get(session_key=session_key)
         # Change it
         self.model.objects.save(s.session_key, {'y': 2}, s.expire_date)
@@ -546,7 +546,7 @@ class CustomDatabaseSessionTests(DatabaseSessionTests):
         self.session.save()
 
         # Make sure that the customized create_model_instance() was called.
-        session_key = self.session.get_session_key_hash(self.session.session_key)
+        session_key = self.session.get_backend_key(self.session.session_key)
         s = self.model.objects.get(session_key=session_key)
         self.assertEqual(s.account_id, 42)
 
@@ -555,7 +555,7 @@ class CustomDatabaseSessionTests(DatabaseSessionTests):
         self.session.save()
 
         # Make sure that save() on an existing session did the right job.
-        session_key = self.session.get_session_key_hash(self.session.session_key)
+        session_key = self.session.get_backend_key(self.session.session_key)
         s = self.model.objects.get(session_key=session_key)
         self.assertIsNone(s.account_id)
 
@@ -658,7 +658,7 @@ class CacheDBSessionWithHashingTests(CacheDBSessionTests):
         with self.assertRaises(self.model.DoesNotExist):
             self.session.model.objects.get(session_key=self.session.session_key)
         self.assertTrue(self.session.model.objects.get(
-            session_key=self.session.get_session_key_hash(self.session.session_key))
+            session_key=self.session.get_backend_key(self.session.session_key))
         )
         self.assertIsNotNone(caches['default'].get(self.session.cache_key))
         self.assertNotEqual(self.session.session_key,
@@ -1063,7 +1063,7 @@ class SessionMiddlewareTests(TestCase):
         response = middleware.process_response(request, response)
         self.assertEqual(dict(request.session.values()), {})
 
-        session_key = request.session.get_session_key_hash(request.session.session_key)
+        session_key = request.session.get_backend_key(request.session.session_key)
         session = Session.objects.get(session_key=session_key)
         self.assertEqual(session.get_decoded(), {})
         # While the session is empty, it hasn't been flushed so a cookie should
