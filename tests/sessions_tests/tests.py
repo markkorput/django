@@ -960,7 +960,7 @@ class FileSessionWithHashingNotRequiredTests(FileSessionWithHashingTests):
         del s1._session_cache
         self.assertEqual(s1.get('test_data'), 'value2')
 
-#TODO
+
 @override_settings(SESSION_REQUIRE_KEY_HASH=True)
 class FileSessionWithHashingRequiredTests(FileSessionWithHashingTests):
 
