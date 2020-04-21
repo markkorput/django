@@ -25,7 +25,7 @@ VALID_KEY_CHARS = string.ascii_lowercase + string.digits
 # component. It can only be a single character.
 SESSION_KEY_DELIMITER = '$'
 # this should be available in hashlib
-SESSION_HASHING_ALGORITHM = 'md5'
+SESSION_HASHING_ALGORITHM = 'sha256'
 SESSION_HASHED_KEY_PREFIX = SESSION_HASHING_ALGORITHM + SESSION_KEY_DELIMITER
 
 class CreateError(Exception):
@@ -83,18 +83,18 @@ class KeyHash:
     @staticmethod
     def _has_hash_prefix(frontend_key):
         """Return True when the session_key is hashed in the backend."""
-        return frontend_key.startswith(SESSION_HASHED_KEY_PREFIX)
+        return str(frontend_key).startswith(SESSION_HASHED_KEY_PREFIX)
 
-    @staticmethod
-    def is_valid(frontend_key):
+    @classmethod
+    def is_valid(cls, frontend_key):
         """
         Key must be truthy and at least 8 characters long and
         in the correct format if hashing is required.
         """
         valid = frontend_key and len(frontend_key) >= 8
-        if settings.SESSION_REQUIRE_KEY_HASH:
-            valid &= KeyHash._has_hash_prefix(frontend_key)
-        return valid
+        if not settings.SESSION_REQUIRE_KEY_HASH:
+            return valid
+        return valid and cls._has_hash_prefix(frontend_key)
 
 class SessionBase:
     """
@@ -110,7 +110,6 @@ class SessionBase:
         self.accessed = False
         self.modified = False
         self.serializer = import_string(settings.SESSION_SERIALIZER)
-        self._session_hashing_algorithm = getattr(hashlib, SESSION_HASHING_ALGORITHM)
 
     def __contains__(self, key):
         return key in self._session
