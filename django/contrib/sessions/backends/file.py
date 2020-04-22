@@ -28,9 +28,7 @@ class SessionStore(SessionBase):
 
     @classmethod
     def _get_storage_path(cls):
-        try:
-            return cls._storage_path
-        except AttributeError:
+        if not hasattr(cls, '_storage_path'):
             storage_path = getattr(settings, 'SESSION_FILE_PATH', None) or tempfile.gettempdir()
             # Make sure the storage path is valid.
             if not os.path.isdir(storage_path):
@@ -40,18 +38,8 @@ class SessionStore(SessionBase):
                     " Django can store session data." % storage_path)
 
             cls._storage_path = storage_path
-            return storage_path
 
-    def _key_to_file(self, session_key=None):
-        """
-        Get the file associated with this session key.
-        """
-        if session_key is None:
-            session_key = self._get_or_create_session_key()
-        else:
-            session_key = self.get_backend_key(session_key)
-
-        return self._backend_key_to_file(session_key)
+        return cls._storage_path
 
     @classmethod
     def _backend_key_to_file(cls, backend_key):
@@ -75,12 +63,13 @@ class SessionStore(SessionBase):
             return modification.replace(tzinfo=timezone.utc)
         return datetime.datetime.fromtimestamp(modification)
 
-    def _expiry_date(self, session_data, file_path=None):
+    @classmethod
+    def _expiry_date(cls, session_data, file_path):
         """
         Return the expiry time of the file storing the session's content.
         """
         return session_data.get('_session_expiry') or (
-            self._last_modification(file_path if file_path else self._key_to_file()) + datetime.timedelta(seconds=self.get_session_cookie_age())
+            cls._last_modification(file_path) + datetime.timedelta(seconds=cls.get_session_cookie_age_setting())
         )
 
     @classmethod
@@ -115,20 +104,23 @@ class SessionStore(SessionBase):
         try:
             session_data = super().load()
 
+            # None indicates non-existing session
             if session_data == None:
                 session_data = {}
 
-            elif session_data == False:
+            # False indicates invalid session file
+            if session_data == False:
                 self.create()
                 session_data = {}
 
-            else:
-                # Remove expired sessions.
-                expiry_age = self.get_expiry_age(expiry=self._expiry_date(session_data))
-                if expiry_age <= 0:
-                    session_data = {}
-                    self.delete()
-                    self.create()
+            # Remove expired sessions.
+            backend_key = self.get_backend_key(self._get_or_create_session_key())
+            expiry_date = self._expiry_date(session_data, self._backend_key_to_file(backend_key))
+            expiry_age = self.get_expiry_age(expiry=expiry_date)
+            if expiry_age <= 0:
+                session_data = {}
+                self.delete()
+                self.create()
 
         except (OSError, SuspiciousOperation):
             self._session_key = None
@@ -226,7 +218,7 @@ class SessionStore(SessionBase):
             file_path = os.path.join(storage_path, session_file)
             session_data = cls._load_session_data(file_path)
             if session_data != False:
-                expiry_age = cls().get_expiry_age(expiry=cls()._expiry_date(session_data, file_path=file_path))
+                expiry_age = cls().get_expiry_age(expiry=cls._expiry_date(session_data, file_path=file_path))
 
                 if expiry_age <= 0:
                     session_data = {}

@@ -295,6 +295,10 @@ class SessionBase:
     def get_session_cookie_age(self):
         return settings.SESSION_COOKIE_AGE
 
+    @staticmethod
+    def get_session_cookie_age_setting():
+        return settings.SESSION_COOKIE_AGE
+
     def get_expiry_age(self, **kwargs):
         """Get the number of seconds until the session expires.
 

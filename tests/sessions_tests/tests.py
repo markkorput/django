@@ -832,6 +832,10 @@ class FileSessionTests(SessionTestsMixin, TestCase):
     def mkdtemp(self):
         return tempfile.mkdtemp()
 
+    @classmethod
+    def _frontend_key_to_file(cls, frontend_key):
+        return cls.backend._backend_key_to_file(cls.backend.get_backend_key(frontend_key))
+
     @override_settings(
         SESSION_FILE_PATH='/if/this/directory/exists/you/have/a/weird/computer',
     )
@@ -844,16 +848,16 @@ class FileSessionTests(SessionTestsMixin, TestCase):
 
     def test_invalid_key_backslash(self):
         # Ensure we don't allow directory-traversal.
-        # This is tested directly on _key_to_file, as load() will swallow
+        # This is tested directly on _backend_key_to_file, as load() will swallow
         # a SuspiciousOperation in the same way as an OSError - by creating
         # a new session, making it unclear whether the slashes were detected.
         with self.assertRaises(InvalidSessionKey):
-            self.backend()._key_to_file("a\\b\\c")
+            self.backend._backend_key_to_file(self.backend.get_backend_key("a\\b\\c"))
 
     def test_invalid_key_forwardslash(self):
         # Ensure we don't allow directory-traversal
         with self.assertRaises(InvalidSessionKey):
-            self.backend()._key_to_file("a/b/c")
+            self._frontend_key_to_file("a/b/c")
 
     @override_settings(
         SESSION_ENGINE="django.contrib.sessions.backends.file",
@@ -904,7 +908,6 @@ class FileSessionPathLibTests(FileSessionTests):
         tmp_dir = super().mkdtemp()
         return Path(tmp_dir)
 
-
 class FileSessionWithoutHashingTests(FileSessionTests):
     def test_file_key_same_as_session_key(self):
         """
@@ -914,8 +917,7 @@ class FileSessionWithoutHashingTests(FileSessionTests):
         self.session['y'] = 1
         self.session.save()
 
-        file_path = self.backend()._key_to_file(
-            session_key=self.session.session_key)
+        file_path = self._frontend_key_to_file(self.session._get_or_create_session_key())
         file_key = file_path[(
             len(self.backend()._get_storage_path() + self.backend()._get_file_prefix()) + 1):]
         self.assertEqual(file_key, self.session.session_key)
@@ -931,8 +933,7 @@ class FileSessionWithHashingTests(FileSessionTests):
         self.session['y'] = 1
         self.session.save()
 
-        file_path = self.backend()._key_to_file(
-            session_key=self.session.session_key)
+        file_path = self._frontend_key_to_file(self.session._get_or_create_session_key())
 
         file_path_start = os.path.join(self.backend()._get_storage_path(), self.backend()._get_file_prefix())       
         self.assertTrue(file_path.startswith(file_path_start))
