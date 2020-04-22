@@ -190,16 +190,9 @@ class SessionStore(SessionBase):
     def _exists(cls, backend_key):
         return os.path.exists(cls._backend_key_to_file(backend_key))
 
-    def delete(self, session_key=None):
-        if session_key is None:
-            if self.session_key is None:
-                return
-            session_key = self.session_key
-        # try:
-        #     os.unlink(self._key_to_file(session_key))
-        # except OSError:
-        #     pass
-        SessionStore._delete_file(self._key_to_file(session_key))
+    @classmethod
+    def _delete(cls, backend_key):
+        SessionStore._delete_file(cls._backend_key_to_file(backend_key))
 
     @staticmethod
     def _delete_file(file_path):

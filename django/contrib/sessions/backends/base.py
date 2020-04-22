@@ -442,12 +442,18 @@ class SessionBase:
 
         return self._save(self.get_backend_key(self.session_key), session_data, must_create=must_create)
 
-    def delete(self, session_key=None):
-        """
-        Delete the session data under this key. If the key is None, use the
-        current session key value.
-        """
-        raise NotImplementedError('subclasses of SessionBase must provide a delete() method')
+    def delete(self, frontend_key=None):
+        # """
+        # Delete the session data under this key. If the key is None, use the
+        # current session key value.
+        # """
+        # raise NotImplementedError('subclasses of SessionBase must provide a delete() method')
+
+        if frontend_key is None and not self.session_key is None:
+            frontend_key = self.session_key
+        
+        if not frontend_key is None:
+            self._delete(self.get_backend_key(frontend_key))
 
     def load(self):
         """
@@ -478,3 +484,9 @@ class SessionBase:
     def _exists(cls, backend_key):
         """ TODO """
         raise NotImplementedError('This backend does not support clear_expired().')
+
+    @classmethod
+    def _delete(cls, backend_key):
+        """ TODO """
+        raise NotImplementedError('This backend does not support clear_expired().')
+
