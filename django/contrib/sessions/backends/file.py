@@ -113,21 +113,31 @@ class SessionStore(SessionBase):
     def load(self):
         session_data = {}
         try:
-            session_data = self._load_session_data(self._key_to_file())
+            session_data = super().load()
 
-            if session_data == False:
+            if session_data == None:
+                session_data = {}
+
+            elif session_data == False:
                 self.create()
                 session_data = {}
 
-            # Remove expired sessions.
-            expiry_age = self.get_expiry_age(expiry=self._expiry_date(session_data))
-            if expiry_age <= 0:
-                session_data = {}
-                self.delete()
-                self.create()
+            else:
+                # Remove expired sessions.
+                expiry_age = self.get_expiry_age(expiry=self._expiry_date(session_data))
+                if expiry_age <= 0:
+                    session_data = {}
+                    self.delete()
+                    self.create()
+
         except (OSError, SuspiciousOperation):
             self._session_key = None
+
         return session_data
+
+    @classmethod
+    def _load_data(cls, backend_key):
+        return cls._load_session_data(cls._backend_key_to_file(backend_key))
 
     @classmethod
     def _save(cls, backend_key, session_data, must_create=False):

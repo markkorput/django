@@ -456,10 +456,18 @@ class SessionBase:
             self._delete(self.get_backend_key(frontend_key))
 
     def load(self):
-        """
-        Load the session data and return a dictionary.
-        """
-        raise NotImplementedError('subclasses of SessionBase must provide a load() method')
+        # """
+        # Load the session data and return a dictionary.
+        # """
+        # raise NotImplementedError('subclasses of SessionBase must provide a load() method')
+
+        frontend_key = self.session_key
+
+        if frontend_key is None:
+            return None
+
+        backend_key = self.get_backend_key(frontend_key)
+        return self._load_data(backend_key)
 
     @classmethod
     def clear_expired(cls):
@@ -474,6 +482,11 @@ class SessionBase:
 
 
     # Methods that child classes must implement.
+
+    @classmethod
+    def _load_data(cls, backend_key):
+        """ TODO """
+        raise NotImplementedError('This backend does not support clear_expired().')
 
     @classmethod
     def _save(cls, backend_key, session_data, must_create=False):
