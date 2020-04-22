@@ -46,22 +46,6 @@ class UpdateError(Exception):
 class KeyHash:
     _algorithm = getattr(hashlib, SESSION_HASHING_ALGORITHM)
 
-    def __init__(self, frontend_key):
-        self._frontend_key = frontend_key
-        self._backend_key = None
-        # self._algorithm = getattr(hashlib, SESSION_HASHING_ALGORITHM)
-
-    def _get_frontend_key(self):
-        return self._frontend_key
-    
-    def _get_backend_key(self):
-        if self._backend_key is None:
-            self._backend_key = KeyHash.create_backend_key(self._frontend_key)
-        return self._backend_key
-    
-    frontend_key = property(_get_frontend_key)
-    backend_key = property(_get_backend_key)
-
     @classmethod
     def create_backend_key(cls, frontend_key):
         if frontend_key is None:
