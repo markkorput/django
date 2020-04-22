@@ -836,7 +836,8 @@ class FileSessionTests(SessionTestsMixin, TestCase):
         SESSION_FILE_PATH='/if/this/directory/exists/you/have/a/weird/computer',
     )
     def test_configuration_check(self):
-        del self.backend._storage_path
+        if hasattr(self.backend, '_storage_path'):
+            del self.backend._storage_path
         # Make sure the file backend checks for a good storage dir
         with self.assertRaises(ImproperlyConfigured):
             self.backend()
@@ -916,7 +917,7 @@ class FileSessionWithoutHashingTests(FileSessionTests):
         file_path = self.backend()._key_to_file(
             session_key=self.session.session_key)
         file_key = file_path[(
-            len(self.backend().storage_path + self.backend().file_prefix) + 1):]
+            len(self.backend()._get_storage_path() + self.backend()._get_file_prefix()) + 1):]
         self.assertEqual(file_key, self.session.session_key)
 
 
@@ -933,7 +934,7 @@ class FileSessionWithHashingTests(FileSessionTests):
         file_path = self.backend()._key_to_file(
             session_key=self.session.session_key)
 
-        file_path_start = os.path.join(self.backend().storage_path, self.backend().file_prefix)       
+        file_path_start = os.path.join(self.backend()._get_storage_path(), self.backend()._get_file_prefix())       
         self.assertTrue(file_path.startswith(file_path_start))
 
         file_key = file_path[len(file_path_start):]

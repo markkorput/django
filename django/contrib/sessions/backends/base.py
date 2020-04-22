@@ -116,6 +116,14 @@ class SessionBase:
         del self._session[key]
         self.modified = True
 
+    @classmethod
+    def get_serializer(cls):
+        return import_string(settings.SESSION_SERIALIZER)
+
+    @classmethod
+    def get_key_salt(cls):
+        return 'django.contrib.sessions.' + cls.__qualname__
+
     @property
     def key_salt(self):
         return 'django.contrib.sessions.' + self.__class__.__qualname__
@@ -150,12 +158,22 @@ class SessionBase:
         key_salt = "django.contrib.sessions" + self.__class__.__name__
         return salted_hmac(key_salt, value).hexdigest()
 
-    def encode(self, session_dict):
+    @classmethod
+    def _encode(cls, session_dict):
         "Return the given session dictionary serialized and encoded as a string."
         return signing.dumps(
-            session_dict, salt=self.key_salt, serializer=self.serializer,
+            session_dict, salt=cls.get_key_salt(), serializer=cls.get_serializer(),
             compress=True,
         )
+
+    def encode(self, session_dict):
+        # "Return the given session dictionary serialized and encoded as a string."
+        # return signing.dumps(
+        #     session_dict, salt=self.key_salt, serializer=self.serializer,
+        #     compress=True,
+        # )
+        return self._encode(session_dict)
+
 
     def decode(self, session_data):
         try:
@@ -389,20 +407,35 @@ class SessionBase:
         raise NotImplementedError('subclasses of SessionBase must provide an exists() method')
 
     def create(self):
-        """
-        Create a new session instance. Guaranteed to create a new object with
-        a unique key and will have saved the result once (with empty data)
-        before the method returns.
-        """
-        raise NotImplementedError('subclasses of SessionBase must provide a create() method')
+        # """
+        # Create a new session instance. Guaranteed to create a new object with
+        # a unique key and will have saved the result once (with empty data)
+        # before the method returns.
+        # """
+        # raise NotImplementedError('subclasses of SessionBase must provide a create() method')
+        while True:
+            self._session_key = self._get_new_session_key()
+            try:
+                self.save(must_create=True)
+            except CreateError:
+                continue
+            self.modified = True
+            return
 
     def save(self, must_create=False):
-        """
-        Save the session data. If 'must_create' is True, create a new session
-        object (or raise CreateError). Otherwise, only update an existing
-        object and don't create one (raise UpdateError if needed).
-        """
-        raise NotImplementedError('subclasses of SessionBase must provide a save() method')
+        # """
+        # Save the session data. If 'must_create' is True, create a new session
+        # object (or raise CreateError). Otherwise, only update an existing
+        # object and don't create one (raise UpdateError if needed).
+        # """
+        # raise NotImplementedError('subclasses of SessionBase must provide a save() method')
+        if self.session_key is None:
+            return self.create()
+        # Get the session data now, before we start messing
+        # with the file it is stored within.
+        session_data = self._get_session(no_load=must_create)
+
+        return self._save(self.get_backend_key(self.session_key), session_data, must_create=must_create)
 
     def delete(self, session_key=None):
         """
@@ -427,3 +460,12 @@ class SessionBase:
         a built-in expiration mechanism, it should be a no-op.
         """
         raise NotImplementedError('This backend does not support clear_expired().')
+
+
+    # Methods that child classes must implement.
+
+    @classmethod
+    def _save(cls, backend_key, session_data, must_create=False):
+        """ TODO """
+        raise NotImplementedError('This backend does not support clear_expired().')
+

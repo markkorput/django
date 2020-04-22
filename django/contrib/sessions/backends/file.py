@@ -19,9 +19,12 @@ class SessionStore(SessionBase):
     Implement a file based session store.
     """
     def __init__(self, session_key=None):
-        self.storage_path = self._get_storage_path()
-        self.file_prefix = settings.SESSION_COOKIE_NAME
         super().__init__(session_key)
+        self._get_storage_path() # preload, cache and validate storage_path
+
+    @staticmethod
+    def _get_file_prefix():
+        return settings.SESSION_COOKIE_NAME
 
     @classmethod
     def _get_storage_path(cls):
@@ -48,14 +51,18 @@ class SessionStore(SessionBase):
         else:
             session_key = self.get_backend_key(session_key)
 
+        return self._backend_key_to_file(session_key)
+
+    @classmethod
+    def _backend_key_to_file(cls, backend_key):
         # Make sure we're not vulnerable to directory traversal. Session keys
         # should always be md5s, so they should never contain directory
         # components.
-        if not set(session_key).issubset(VALID_KEY_CHARS):
+        if not set(backend_key).issubset(VALID_KEY_CHARS):
             raise InvalidSessionKey(
                 "Invalid characters in session key")
 
-        return os.path.join(self.storage_path, self.file_prefix + session_key)
+        return os.path.join(cls._get_storage_path(), settings.SESSION_COOKIE_NAME + backend_key)
 
     @staticmethod
     def _last_modification(file_path):
@@ -122,24 +129,9 @@ class SessionStore(SessionBase):
             self._session_key = None
         return session_data
 
-    def create(self):
-        while True:
-            self._session_key = self._get_new_session_key()
-            try:
-                self.save(must_create=True)
-            except CreateError:
-                continue
-            self.modified = True
-            return
-
-    def save(self, must_create=False):
-        if self.session_key is None:
-            return self.create()
-        # Get the session data now, before we start messing
-        # with the file it is stored within.
-        session_data = self._get_session(no_load=must_create)
-
-        session_file_name = self._key_to_file()
+    @classmethod
+    def _save(cls, backend_key, session_data, must_create=False):
+        session_file_name = cls._backend_key_to_file(backend_key)
 
         try:
             # Make sure the file exists.  If it does not already exist, an
@@ -178,7 +170,7 @@ class SessionStore(SessionBase):
             renamed = False
             try:
                 try:
-                    os.write(output_file_fd, self.encode(session_data).encode())
+                    os.write(output_file_fd, cls._encode(session_data).encode())
                 finally:
                     os.close(output_file_fd)
 
@@ -192,6 +184,7 @@ class SessionStore(SessionBase):
                     os.unlink(output_file_name)
         except (EOFError, OSError):
             pass
+        pass
 
     def exists(self, session_key):
         return os.path.exists(self._key_to_file(session_key))
@@ -220,7 +213,7 @@ class SessionStore(SessionBase):
     @classmethod
     def clear_expired(cls):
         storage_path = cls._get_storage_path()
-        file_prefix = settings.SESSION_COOKIE_NAME
+        file_prefix = cls._get_file_prefix()
 
         for session_file in os.listdir(storage_path):
             if not session_file.startswith(file_prefix):
