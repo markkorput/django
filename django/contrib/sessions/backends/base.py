@@ -400,11 +400,16 @@ class SessionBase:
 
     # Methods that child classes must implement.
 
-    def exists(self, session_key):
-        """
-        Return True if the given session_key already exists.
-        """
-        raise NotImplementedError('subclasses of SessionBase must provide an exists() method')
+    def exists(self, frontend_key):
+        # """
+        # Return True if the given session_key already exists.
+        # """
+        # raise NotImplementedError('subclasses of SessionBase must provide an exists() method')
+        if frontend_key is None:
+            frontend_key = self._get_or_create_session_key()
+
+        backend_key = self.get_backend_key(frontend_key)
+        return self._exists(backend_key)
 
     def create(self):
         # """
@@ -469,3 +474,7 @@ class SessionBase:
         """ TODO """
         raise NotImplementedError('This backend does not support clear_expired().')
 
+    @classmethod
+    def _exists(cls, backend_key):
+        """ TODO """
+        raise NotImplementedError('This backend does not support clear_expired().')

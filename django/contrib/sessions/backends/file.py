@@ -186,8 +186,9 @@ class SessionStore(SessionBase):
             pass
         pass
 
-    def exists(self, session_key):
-        return os.path.exists(self._key_to_file(session_key))
+    @classmethod
+    def _exists(cls, backend_key):
+        return os.path.exists(cls._backend_key_to_file(backend_key))
 
     def delete(self, session_key=None):
         if session_key is None:
