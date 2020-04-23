@@ -66,7 +66,7 @@ class SessionStore(HashingSessionBase):
         Return the expiry time of the file storing the session's content.
         """
         return session_data.get('_session_expiry') or (
-            cls._last_modification(file_path) + datetime.timedelta(seconds=cls.get_session_cookie_age_setting())
+            cls._last_modification(file_path) + datetime.timedelta(seconds=cls.get_session_cookie_age())
         )
 
     @classmethod
@@ -150,7 +150,6 @@ class SessionStore(HashingSessionBase):
         given backend_key. Return empty dict if no corresponding file
         is found, return ``False`` if the file contains invalid content.
         """
-
         return cls._load_session_data(cls._backend_key_to_file(backend_key))
 
     @classmethod

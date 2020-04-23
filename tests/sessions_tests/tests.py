@@ -10,13 +10,13 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.sessions.backends.base import (
-    SESSION_HASHING_ALGORITHM, SESSION_KEY_DELIMITER, UpdateError
+    SESSION_HASHING_ALGORITHM, SESSION_KEY_DELIMITER, UpdateError, SESSION_HASHED_KEY_PREFIX
 )
 from django.contrib.sessions.backends.cache import (
     KEY_PREFIX as CACHE_KEY_PREFIX, SessionStore as CacheSession,
 )
 from django.contrib.sessions.backends.cached_db import (
-    KEY_PREFIX as CACHEDB_KEY_PREFIX, SessionStore as CacheDBSession,
+    KEY_PREFIX as CACHEDB_KEY_PREFIX, SessionStore as CacheDBSession, get_cache_store
 )
 from django.contrib.sessions.backends.db import SessionStore as DatabaseSession
 from django.contrib.sessions.backends.file import SessionStore as FileSession
@@ -676,15 +676,27 @@ class CacheDBSessionTests(SessionTestsMixin, TestCase):
     # Some backends might issue a warning
     @ignore_warnings(module="django.core.cache.backends.base")
     def test_load_overlong_key(self):
-        self.session._session_key = (string.ascii_letters + string.digits) * 20
-        self.assertEqual(self.session.load(), {})
+        s = self.backend(SESSION_HASHED_KEY_PREFIX+(string.ascii_letters + string.digits) * 20)
+        cache_key = s._get_cache_key(s.get_backend_key(s.session_key))
+        # pre-populate cache with value
+        self.backend._set_cache(cache_key, {'a': 'c'})
+        # verify pre-populated value is loaded
+        self.assertEqual(s.load(), {'a': 'c'})
+        s.delete()
 
     @override_settings(SESSION_CACHE_ALIAS='sessions')
     def test_non_default_cache(self):
         # 21000 - CacheDB backend should respect SESSION_CACHE_ALIAS.
         with self.assertRaises(InvalidCacheBackendError):
-            self.backend()
+            get_cache_store()
 
+    def test_loads_from_cache_if_present(self):
+        s = self.backend(SESSION_HASHED_KEY_PREFIX+'foobar1234')
+        cache_key = s._get_cache_key(s.get_backend_key(s.session_key))
+        self.backend._set_cache(cache_key, {'a':'b'})
+        self.assertEqual(self.backend._get_cache(cache_key), {'a': 'b'})        
+        self.assertEqual(s.load(), {'a': 'b'})
+        s.delete()
 
 class CacheDBSessionWithoutHashingTests(CacheDBSessionTests):
 

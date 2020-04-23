@@ -491,7 +491,7 @@ class HashingSessionBase(SessionBase):
         return valid
 
     @staticmethod
-    def get_session_cookie_age_setting():
+    def get_session_cookie_age():
         return settings.SESSION_COOKIE_AGE
 
     @classmethod
@@ -514,11 +514,40 @@ class HashingSessionBase(SessionBase):
 
         if isinstance(expiry, datetime):
             return expiry
-        expiry = expiry or cls.get_session_cookie_age_setting()
+        expiry = expiry or cls.get_session_cookie_age()
         return modification + timedelta(seconds=expiry)
+
+    @classmethod
+    def _get_expiry_age(cls, session_data, **kwargs):
+        """Get the number of seconds until the session expires.
+
+        Optionally, this function accepts `modification` and `expiry` keyword
+        arguments specifying the modification and expiry of the session.
+        """
+        try:
+            modification = kwargs['modification']
+        except KeyError:
+            modification = timezone.now()
+        # Make the difference between "expiry=None passed in kwargs" and
+        # "expiry not passed in kwargs", in order to guarantee not to trigger
+        # self.load() when expiry is provided.
+        try:
+            expiry = kwargs['expiry']
+        except KeyError:
+            expiry = session_data['_session_expiry'] if '_session_expiry' in session_data else None
+
+        if not expiry:   # Checks both None and 0 cases
+            return cls.get_session_cookie_age()
+        if not isinstance(expiry, datetime):
+            return expiry
+        delta = expiry - modification
+        return delta.days * 86400 + delta.seconds
 
     def get_expiry_date(self, **kwargs):
         return self._get_expiry_date(self._session, **kwargs)
+
+    def get_expiry_age(self, **kwargs):
+        return self._get_expiry_age(self._get_session(no_load=True), **kwargs)
 
     @classmethod
     def get_backend_key(cls, frontend_key):
