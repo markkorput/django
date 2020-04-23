@@ -1,7 +1,10 @@
 from django.contrib.sessions.backends.base import HashingSessionBase
 from django.core import signing
 
-
+# Even if this SessionStore doesn't perform key-hashing, it still inherits
+# from HashingSessionBase, and not from SessionBase directly, because
+# backends that don't inherit from HashingSessionBase will cause deprecation
+# warnings.
 class SessionStore(HashingSessionBase):
 
     def load(self):
@@ -73,7 +76,7 @@ class SessionStore(HashingSessionBase):
         return signing.dumps(
             self._session, compress=True,
             salt='django.contrib.sessions.backends.signed_cookies',
-            serializer=self.serializer,
+            serializer=self.get_serializer(),
         )
 
     @classmethod
