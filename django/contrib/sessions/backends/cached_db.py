@@ -25,6 +25,10 @@ class SessionStore(DBStore):
         return self.cache_key_prefix + session_key
 
     def load(self):
+        """
+        Return cashed data if present, otherwise call DBStore.load()
+        and cache the result if any data is returned.
+        """
         try:
             data = self._cache.get(self.cache_key)
         except Exception:
@@ -32,15 +36,16 @@ class SessionStore(DBStore):
             # cache keys. If this happens, reset the session. See #17810.
             data = None
 
-        if data is None:
-            # Duplicate DBStore.load, because we need to keep track
-            # of the expiry date to set it properly in the cache.
-            s = self._get_session_from_db()
-            if s:
-                data = self.decode(s.session_data)
-                self._cache.set(self.cache_key, data, self.get_expiry_age(expiry=s.expire_date))
-            else:
-                data = {}
+        if not data is None:
+            return data
+
+        s = super().load()
+
+        if not s:
+            return {}
+
+        data = self.decode(s.session_data)
+        self._cache.set(self.cache_key, data, self.get_expiry_age(expiry=s.expire_date))
         return data
 
     def exists(self, session_key):

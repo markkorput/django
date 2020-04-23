@@ -109,6 +109,12 @@ class SessionStore(HashingSessionBase):
     # SessionBase methods
 
     def load(self):
+        """
+        Load this session's data and return a dictionary.
+        Return empty dictionary this session does not have
+        a session or the session was not found. Reset the session
+        if it has expired.
+        """
         session_data = super().load()
 
         # return empty session if super().load() failed

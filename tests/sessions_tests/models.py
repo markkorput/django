@@ -28,11 +28,12 @@ class SessionStore(DBStore):
     def get_model_class(cls):
         return CustomSession
 
-    def create_model_instance(self, data):
-        obj = super().create_model_instance(data)
+    @classmethod
+    def create_model_instance(cls, backend_key, session_data):
+        obj = super().create_model_instance(backend_key, session_data)
 
         try:
-            account_id = int(data.get('_auth_user_id'))
+            account_id = int(session_data.get('_auth_user_id'))
         except (ValueError, TypeError):
             account_id = None
         obj.account_id = account_id

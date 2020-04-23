@@ -409,6 +409,48 @@ class HashingSessionBase(SessionBase):
     def encode(self, session_dict):
         return self._encode(session_dict)
 
+    @classmethod
+    def __hash(cls, value):
+        # RemovedInDjango40Warning: pre-Django 3.1 format will be invalid.
+        key_salt = "django.contrib.sessions" + cls.__name__
+        return salted_hmac(key_salt, value).hexdigest()
+
+    @classmethod
+    def __legacy_decode(cls, session_data):
+        # RemovedInDjango40Warning: pre-Django 3.1 format will be invalid.
+        encoded_data = base64.b64decode(session_data.encode('ascii'))
+        try:
+            # could produce ValueError if there is no ':'
+            hash, serialized = encoded_data.split(b':', 1)
+            expected_hash = cls.__hash(serialized)
+            if not constant_time_compare(hash.decode(), expected_hash):
+                raise SuspiciousSession("Session data corrupted")
+            else:
+                ser = cls.get_serializer()
+                return ser().loads(serialized)
+        except Exception as e:
+            # ValueError, SuspiciousOperation, unpickling exceptions. If any of
+            # these happen, just return an empty dictionary (an empty session).
+            if isinstance(e, SuspiciousOperation):
+                logger = logging.getLogger('django.security.%s' % e.__class__.__name__)
+                logger.warning(str(e))
+            return {}
+
+    def _legacy_decode(self, session_data):
+        self.__legacy_decode(session_data)
+
+    @classmethod
+    def _decode(cls, session_data):
+        try:
+            return signing.loads(session_data, salt=cls.get_key_salt(), serializer=cls.get_serializer())
+        # RemovedInDjango40Warning: when the deprecation ends, handle here
+        # exceptions similar to what _legacy_decode() does now.
+        except Exception:
+            return cls.__legacy_decode(session_data)
+
+    def decode(self, session_data):
+        return self._decode(session_data)
+
     def _get_new_session_key(self):
         """
         Return new unique session key. If SESSION_STORE_KEY_HASH is False, the
@@ -451,6 +493,32 @@ class HashingSessionBase(SessionBase):
     @staticmethod
     def get_session_cookie_age_setting():
         return settings.SESSION_COOKIE_AGE
+
+    @classmethod
+    def _get_expiry_date(cls, session_data, **kwargs):
+        """Get session the expiry date (as a datetime object).
+
+        Optionally, this function accepts `modification` and `expiry` keyword
+        arguments specifying the modification and expiry of the session.
+        """
+        try:
+            modification = kwargs['modification']
+        except KeyError:
+            modification = timezone.now()
+        # Same comment as in get_expiry_age
+        try:
+            expiry = kwargs['expiry']
+        except KeyError:
+            # expiry = self.get('_session_expiry')
+            expiry = session_data['_session_expiry'] if '_session_expiry' in session_data else None
+
+        if isinstance(expiry, datetime):
+            return expiry
+        expiry = expiry or cls.get_session_cookie_age_setting()
+        return modification + timedelta(seconds=expiry)
+
+    def get_expiry_date(self, **kwargs):
+        return self._get_expiry_date(self._session, **kwargs)
 
     @classmethod
     def get_backend_key(cls, frontend_key):
@@ -527,12 +595,13 @@ class HashingSessionBase(SessionBase):
     def load(self):
         """
         Load this session's data and return a dictionary.
-        Return None if this session does not have a session key.
+        Return empty dictionary this session does not have a session
+        or the session was not found.
         """
         frontend_key = self.session_key
 
         if frontend_key is None:
-            return None
+            return {}
 
         backend_key = self.get_backend_key(frontend_key)
         data = self._load_data(backend_key)

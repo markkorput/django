@@ -738,8 +738,8 @@ class CacheDBSessionWithHashingTests(CacheDBSessionTests):
 
         self.assertTrue(self.session.exists(self.session.session_key))
         with self.assertRaises(self.model.DoesNotExist):
-            self.session.model.objects.get(session_key=self.session.session_key)
-        self.assertTrue(self.session.model.objects.get(
+            self.session.get_model().objects.get(session_key=self.session.session_key)
+        self.assertTrue(self.session.get_model().objects.get(
             session_key=self.session.get_backend_key(self.session.session_key))
         )
         self.assertIsNotNone(caches['default'].get(self.session.cache_key))
