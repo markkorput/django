@@ -846,7 +846,7 @@ class FileSessionTests(SessionTestsMixin, TestCase):
         s = self.backend()
         # Make sure the file backend checks for a good storage dir
         with self.assertRaises(ImproperlyConfigured):
-            s.load()
+            s.save()
 
     def test_invalid_key_backslash(self):
         # Ensure we don't allow directory-traversal.

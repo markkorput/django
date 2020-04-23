@@ -10,11 +10,7 @@ from django.utils.functional import cached_property
 
 
 class SessionStore(HashingSessionBase):
-    """
-    Implement database session store.
-    """
-    def __init__(self, session_key=None):
-        super().__init__(session_key)
+    _model = None
 
     @classmethod
     def get_model_class(cls):
@@ -26,6 +22,12 @@ class SessionStore(HashingSessionBase):
     @cached_property
     def model(self):
         return self.get_model_class()
+
+    @classmethod
+    def get_model(cls):
+        if cls._model is None: #not hasattr(cls, '_model'):
+            cls._model = cls.get_model_class()
+        return cls._model
 
     def _get_session_from_db(self):
         try:
@@ -43,6 +45,19 @@ class SessionStore(HashingSessionBase):
     def load(self):
         s = self._get_session_from_db()
         return self.decode(s.session_data) if s else {}
+
+    @classmethod
+    def _load_data(cls, backend_key):
+        try:
+            s = cls.get_model().objects.get(
+                session_key=backend_key,
+                expire_date__gt=timezone.now())
+            return s
+        except (cls.get_model().DoesNotExist, SuspiciousOperation) as e:
+            if isinstance(e, SuspiciousOperation):
+                logger = logging.getLogger('django.security.%s' % e.__class__.__name__)
+                logger.warning(str(e))
+            self._session_key = None
 
     def exists(self, session_key):
         return self.model.objects.filter(session_key=self.get_backend_key(session_key)).exists()

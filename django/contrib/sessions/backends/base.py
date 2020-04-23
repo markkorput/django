@@ -535,7 +535,15 @@ class HashingSessionBase(SessionBase):
             return None
 
         backend_key = self.get_backend_key(frontend_key)
-        return self._load_data(backend_key)
+        data = self._load_data(backend_key)
+
+        # None is returned if session isn't found
+        if data is None:
+            self._session_key = None
+            # only return None when there is no frontend_key
+            return {}
+
+        return data
 
     # Methods that child classes must implement.
 
@@ -551,6 +559,7 @@ class HashingSessionBase(SessionBase):
         """
         Load the session data for the session identified
         by 'backend_key' and return a dictionary.
+        Return None if the session doesn't exists.
         """
         raise NotImplementedError('subclasses of SessionBase must provide a _load_data() method')
 

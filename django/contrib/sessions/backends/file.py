@@ -78,9 +78,12 @@ class SessionStore(HashingSessionBase):
         """
         file_data = None
 
-        with open(file_path, encoding='ascii') as session_file:
-            file_data = session_file.read()
-        
+        try:
+            with open(file_path, encoding='ascii') as session_file:
+                file_data = session_file.read()
+        except (OSError, SuspiciousOperation):
+            return None
+
         # Don't fail if there is no data in the session file.
         # We may have opened the empty placeholder file.
         if not file_data:
@@ -106,30 +109,31 @@ class SessionStore(HashingSessionBase):
     # SessionBase methods
 
     def load(self):
-        session_data = {}
-        try:
-            session_data = super().load()
+        session_data = super().load()
 
-            # None indicates non-existing session
-            if session_data == None:
-                session_data = {}
+        # return empty session if super().load() failed
+        # and session key was reset
+        if self.session_key is None:
+            return {}
 
-            # False indicates invalid session file
-            if session_data == False:
-                self.create()
-                session_data = {}
+        # our _load_data will return False to indicate
+        # invalid/corrupted session file. If that happens,
+        # recreate our sessions file
+        elif session_data == False:
+            self.create()
+            session_data = {}
 
-            # Remove expired sessions.
-            backend_key = self.get_backend_key(self._get_or_create_session_key())
-            expiry_date = self._expiry_date(session_data, self._backend_key_to_file(backend_key))
-            expiry_age = self.get_expiry_age(expiry=expiry_date)
-            if expiry_age <= 0:
-                session_data = {}
-                self.delete()
-                self.create()
-
-        except (OSError, SuspiciousOperation):
-            self._session_key = None
+        if session_data is None:
+            session_data = {}
+        
+        # Remove expired sessions.
+        backend_key = self.get_backend_key(self._get_or_create_session_key())
+        expiry_date = self._expiry_date(session_data, self._backend_key_to_file(backend_key))
+        expiry_age = self.get_expiry_age(expiry=expiry_date)
+        if expiry_age <= 0:
+            session_data = {}
+            self.delete()
+            self.create()
 
         return session_data
 
