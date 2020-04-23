@@ -1,8 +1,8 @@
-from django.contrib.sessions.backends.base import SessionBase
+from django.contrib.sessions.backends.base import HashingSessionBase
 from django.core import signing
 
 
-class SessionStore(SessionBase):
+class SessionStore(HashingSessionBase):
 
     def load(self):
         """

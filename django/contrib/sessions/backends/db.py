@@ -1,7 +1,7 @@
 import logging
 
 from django.contrib.sessions.backends.base import (
-    CreateError, SessionBase, UpdateError,
+    CreateError, HashingSessionBase, UpdateError,
 )
 from django.core.exceptions import SuspiciousOperation
 from django.db import DatabaseError, IntegrityError, router, transaction
@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.utils.functional import cached_property
 
 
-class SessionStore(SessionBase):
+class SessionStore(HashingSessionBase):
     """
     Implement database session store.
     """

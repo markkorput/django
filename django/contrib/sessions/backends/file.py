@@ -7,14 +7,14 @@ from contextlib import suppress
 
 from django.conf import settings
 from django.contrib.sessions.backends.base import (
-    VALID_KEY_CHARS, CreateError, SessionBase, UpdateError,
+    VALID_KEY_CHARS, CreateError, SessionBase, HashingSessionBase, UpdateError,
 )
 from django.contrib.sessions.exceptions import InvalidSessionKey
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.utils import timezone
 
 
-class SessionStore(SessionBase):
+class SessionStore(HashingSessionBase):
     """
     Implement a file based session store.
     """
