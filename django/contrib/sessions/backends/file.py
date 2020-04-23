@@ -18,9 +18,6 @@ class SessionStore(SessionBase):
     """
     Implement a file based session store.
     """
-    def __init__(self, session_key=None):
-        super().__init__(session_key)
-        self._get_storage_path() # preload, cache and validate storage_path
 
     @staticmethod
     def _get_file_prefix():
@@ -99,6 +96,15 @@ class SessionStore(SessionBase):
 
         return session_data
 
+    @staticmethod
+    def _delete_file(file_path):
+        try:
+            os.unlink(file_path)
+        except OSError:
+            pass
+
+    # SessionBase methods
+
     def load(self):
         session_data = {}
         try:
@@ -129,6 +135,12 @@ class SessionStore(SessionBase):
 
     @classmethod
     def _load_data(cls, backend_key):
+        """
+        Return dict with session data from file corresponding to the
+        given backend_key. Return empty dict if no corresponding file
+        is found, return ``False`` if the file contains invalid content.
+        """
+
         return cls._load_session_data(cls._backend_key_to_file(backend_key))
 
     @classmethod
@@ -194,17 +206,7 @@ class SessionStore(SessionBase):
 
     @classmethod
     def _delete(cls, backend_key):
-        SessionStore._delete_file(cls._backend_key_to_file(backend_key))
-
-    @staticmethod
-    def _delete_file(file_path):
-        try:
-            os.unlink(file_path)
-        except OSError:
-            pass
-
-    def clean(self):
-        pass
+        cls._delete_file(cls._backend_key_to_file(backend_key))
 
     @classmethod
     def clear_expired(cls):

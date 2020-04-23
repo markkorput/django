@@ -842,9 +842,11 @@ class FileSessionTests(SessionTestsMixin, TestCase):
     def test_configuration_check(self):
         if hasattr(self.backend, '_storage_path'):
             del self.backend._storage_path
+
+        s = self.backend()
         # Make sure the file backend checks for a good storage dir
         with self.assertRaises(ImproperlyConfigured):
-            self.backend()
+            s.load()
 
     def test_invalid_key_backslash(self):
         # Ensure we don't allow directory-traversal.
