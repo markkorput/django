@@ -75,10 +75,16 @@ class KeyHash:
         Key must be truthy and at least 8 characters long and
         in the correct format if hashing is required.
         """
-        valid = frontend_key and len(frontend_key) >= 8
-        if not settings.SESSION_REQUIRE_KEY_HASH:
-            return valid
-        return valid and cls._has_hash_prefix(frontend_key)
+        valid = frontend_key != None and len(frontend_key) >= 8
+        if settings.SESSION_REQUIRE_KEY_HASH:
+            valid &= cls._has_hash_prefix(frontend_key)
+        return valid
+
+    @staticmethod
+    def add_hashing_prefix(session_key):
+        frontend_key = SESSION_HASHED_KEY_PREFIX + str(session_key)
+        return frontend_key
+
 
 class SessionBase:
     """
@@ -174,7 +180,6 @@ class SessionBase:
         # )
         return self._encode(session_dict)
 
-
     def decode(self, session_data):
         try:
             return signing.loads(session_data, salt=self.key_salt, serializer=self.serializer)
@@ -227,7 +232,7 @@ class SessionBase:
         self.modified = True
 
     def is_empty(self):
-        "Return True when there is no session_key and the session is empty."
+        """Return True when there is no session_key and the session is empty."""
         try:
             return not self._session_key and not self._session_cache
         except AttributeError:
@@ -242,23 +247,28 @@ class SessionBase:
         return KeyHash.create_backend_key(frontend_key)
 
     def _get_new_session_key(self):
-        "Return session key that isn't being used."
+        """
+        Return new unique session key. If SESSION_STORE_KEY_HASH is False, the
+        key is a 32-character string. If SESSION_STORE_KEY_HASH is True the key
+        is a frontend_key consisting of a hashing algorithm prefix followed by
+        a 32-character session key.
+        """
         while True:
-            #TODO
-            # key_hash = KeyHash.random()
-            session_key = get_random_string(32, VALID_KEY_CHARS)
-            hashed_session_key = SESSION_HASHED_KEY_PREFIX + session_key
-            if not self.exists(session_key) and not (settings.SESSION_STORE_KEY_HASH and self.exists(hashed_session_key)):
-                break
-        if settings.SESSION_STORE_KEY_HASH:
-            return hashed_session_key
-        return session_key
+            # session_key
+            keys = [get_random_string(32, VALID_KEY_CHARS)]
+            # also consider hashed frontend_key if hashing is enabld
+            if settings.SESSION_STORE_KEY_HASH:
+                keys.append(KeyHash.add_hashing_prefix(keys[0]))
+
+            # only if the key(s) don't already exist
+            if next((key for key in keys if self.exists(key)), None) == None:
+                # return the relevant key
+                return keys[-1]
 
     def _get_or_create_session_key(self):
         if self._session_key is None:
             self._session_key = self._get_new_session_key()
         return self.get_backend_key(self._session_key)
-
 
     def _get_session_key(self):
         return self.__session_key
@@ -402,13 +412,12 @@ class SessionBase:
         if key:
             self.delete(key)
 
-    # Methods that child classes must implement.
-
     def exists(self, frontend_key):
-        # """
-        # Return True if the given session_key already exists.
-        # """
-        # raise NotImplementedError('subclasses of SessionBase must provide an exists() method')
+        """
+        Return ``True`` if a session identified by the given frontend_key
+        exists. If 'frontend_key' is None, the current session's session_key
+        will be used.
+        """
         if frontend_key is None:
             frontend_key = self._get_or_create_session_key()
 
@@ -416,12 +425,11 @@ class SessionBase:
         return self._exists(backend_key)
 
     def create(self):
-        # """
-        # Create a new session instance. Guaranteed to create a new object with
-        # a unique key and will have saved the result once (with empty data)
-        # before the method returns.
-        # """
-        # raise NotImplementedError('subclasses of SessionBase must provide a create() method')
+        """
+        Create a new session instance. Guaranteed to create a new object with
+        a unique key and will have saved the result once (with empty data)
+        before the method returns.
+        """
         while True:
             self._session_key = self._get_new_session_key()
             try:
@@ -432,27 +440,22 @@ class SessionBase:
             return
 
     def save(self, must_create=False):
-        # """
-        # Save the session data. If 'must_create' is True, create a new session
-        # object (or raise CreateError). Otherwise, only update an existing
-        # object and don't create one (raise UpdateError if needed).
-        # """
-        # raise NotImplementedError('subclasses of SessionBase must provide a save() method')
+        """
+        Save the current session. if 'must_create' is ``True``
+        or the current session does not have a session_key yet
+        it will create a new session record. Otherwise it will
+        update the existing record identified by the self.session_key.
+        """
         if self.session_key is None:
             return self.create()
-        # Get the session data now, before we start messing
-        # with the file it is stored within.
         session_data = self._get_session(no_load=must_create)
-
         return self._save(self.get_backend_key(self.session_key), session_data, must_create=must_create)
 
     def delete(self, frontend_key=None):
-        # """
-        # Delete the session data under this key. If the key is None, use the
-        # current session key value.
-        # """
-        # raise NotImplementedError('subclasses of SessionBase must provide a delete() method')
-
+        """
+        Delete the session data under this key. If the key is None, use the
+        current session key value.
+        """
         if frontend_key is None and not self.session_key is None:
             frontend_key = self.session_key
         
@@ -460,11 +463,10 @@ class SessionBase:
             self._delete(self.get_backend_key(frontend_key))
 
     def load(self):
-        # """
-        # Load the session data and return a dictionary.
-        # """
-        # raise NotImplementedError('subclasses of SessionBase must provide a load() method')
-
+        """
+        Load this session's data and return a dictionary.
+        Return None if this session does not have a session key.
+        """
         frontend_key = self.session_key
 
         if frontend_key is None:
@@ -472,6 +474,40 @@ class SessionBase:
 
         backend_key = self.get_backend_key(frontend_key)
         return self._load_data(backend_key)
+
+    # Methods that child classes must implement.
+
+    @classmethod
+    def _load_data(cls, backend_key):
+        """
+        Load the session data for the session identified
+        by 'backend_key' and return a dictionary.
+        """
+        raise NotImplementedError('subclasses of SessionBase must provide a _load_data() method')
+
+    @classmethod
+    def _save(cls, backend_key, session_data, must_create=False):
+        """
+        Save the session data for the session identified by 'backend_key'.
+        If 'must_create' is True, create a new session object (or raise
+        CreateError). Otherwise, only update an existing object and don't
+        create one (raise UpdateError if needed).
+        """
+        raise NotImplementedError('subclasses of SessionBase must provide a _save() method')
+
+    @classmethod
+    def _exists(cls, backend_key):
+        """
+        Return True if a session for the given 'backend_key' already exists.
+        """
+        raise NotImplementedError('subclasses of SessionBase must provide a _exists() method')
+
+    @classmethod
+    def _delete(cls, backend_key):
+        """
+        Delete the session identified by 'backend_key'.
+        """
+        raise NotImplementedError('subclasses of SessionBase must provide a _delete() method')
 
     @classmethod
     def clear_expired(cls):
@@ -482,28 +518,5 @@ class SessionBase:
         NotImplementedError. If it isn't necessary, because the backend has
         a built-in expiration mechanism, it should be a no-op.
         """
-        raise NotImplementedError('This backend does not support clear_expired().')
-
-
-    # Methods that child classes must implement.
-
-    @classmethod
-    def _load_data(cls, backend_key):
-        """ TODO """
-        raise NotImplementedError('This backend does not support clear_expired().')
-
-    @classmethod
-    def _save(cls, backend_key, session_data, must_create=False):
-        """ TODO """
-        raise NotImplementedError('This backend does not support clear_expired().')
-
-    @classmethod
-    def _exists(cls, backend_key):
-        """ TODO """
-        raise NotImplementedError('This backend does not support clear_expired().')
-
-    @classmethod
-    def _delete(cls, backend_key):
-        """ TODO """
         raise NotImplementedError('This backend does not support clear_expired().')
 
