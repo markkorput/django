@@ -47,7 +47,7 @@ class SessionStore(HashingSessionBase):
             raise InvalidSessionKey(
                 "Invalid characters in session key")
 
-        return os.path.join(cls._get_storage_path(), settings.SESSION_COOKIE_NAME + backend_key)
+        return os.path.join(cls._get_storage_path(), cls._get_file_prefix() + backend_key)
 
     @staticmethod
     def _last_modification(file_path):

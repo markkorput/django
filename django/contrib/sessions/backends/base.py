@@ -459,17 +459,15 @@ class HashingSessionBase(SessionBase):
         a 32-character session key.
         """
         while True:
-            # session_key
-            keys = [get_random_string(32, VALID_KEY_CHARS)]
-            # also consider hashed frontend_key if hashing is enabled
-            if settings.SESSION_STORE_KEY_HASH:
-                hashed_frontend_key = SESSION_HASHED_KEY_PREFIX + str(keys[0])
-                keys.append(hashed_frontend_key)
+            session_key = super()._get_new_session_key()
 
-            # only if the key(s) don't already exist
-            if next((key for key in keys if self.exists(key)), None) == None:
-                # return the relevant key
-                return keys[-1]
+            if not settings.SESSION_STORE_KEY_HASH: 
+                return session_key
+
+            hashed_frontend_key = SESSION_HASHED_KEY_PREFIX + session_key
+
+            if not self.exists(hashed_frontend_key):
+                return hashed_frontend_key
 
     def _get_or_create_session_key(self):
         """
@@ -485,9 +483,9 @@ class HashingSessionBase(SessionBase):
         Key must be truthy and at least 8 characters long and
         in the correct format if hashing is required.
         """
-        valid = frontend_key != None and len(frontend_key) >= 8
+        valid = super()._validate_session_key(frontend_key)
         if settings.SESSION_REQUIRE_KEY_HASH:
-            valid &= self._has_hash_prefix(frontend_key)
+            valid = valid and self._has_hash_prefix(frontend_key)
         return valid
 
     @staticmethod
