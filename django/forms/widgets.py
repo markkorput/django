@@ -8,7 +8,6 @@ import warnings
 from collections import defaultdict
 from itertools import chain
 
-from django.conf import settings
 from django.forms.utils import to_current_timezone
 from django.templatetags.static import static
 from django.utils import datetime_safe, formats
@@ -140,7 +139,7 @@ class Media:
         except CyclicDependencyError:
             warnings.warn(
                 'Detected duplicate Media files in an opposite order: {}'.format(
-                    ', '.join(repr(l) for l in lists)
+                    ', '.join(repr(list_) for list_ in lists)
                 ), MediaOrderConflictWarning,
             )
             return list(all_items)
@@ -225,16 +224,16 @@ class Widget(metaclass=MediaDefiningClass):
         return str(value)
 
     def get_context(self, name, value, attrs):
-        context = {}
-        context['widget'] = {
-            'name': name,
-            'is_hidden': self.is_hidden,
-            'required': self.is_required,
-            'value': self.format_value(value),
-            'attrs': self.build_attrs(self.attrs, attrs),
-            'template_name': self.template_name,
+        return {
+            'widget': {
+                'name': name,
+                'is_hidden': self.is_hidden,
+                'required': self.is_required,
+                'value': self.format_value(value),
+                'attrs': self.build_attrs(self.attrs, attrs),
+                'template_name': self.template_name,
+            },
         }
-        return context
 
     def render(self, name, value, attrs=None, renderer=None):
         """Render the widget as an HTML string."""
@@ -1028,7 +1027,7 @@ class SelectDateWidget(Widget):
                 # Convert any zeros in the date to empty strings to match the
                 # empty option value.
                 year, month, day = [int(val) or '' for val in match.groups()]
-            elif settings.USE_L10N:
+            else:
                 input_format = get_format('DATE_INPUT_FORMATS')[0]
                 try:
                     d = datetime.datetime.strptime(value, input_format)

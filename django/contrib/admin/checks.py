@@ -59,6 +59,7 @@ def check_dependencies(**kwargs):
     """
     Check that the admin's dependencies are correctly installed.
     """
+    from django.contrib.admin.sites import all_sites
     if not apps.is_installed('django.contrib.admin'):
         return []
     errors = []
@@ -105,6 +106,15 @@ def check_dependencies(**kwargs):
                 "the admin application.",
                 id='admin.E404',
             ))
+        sidebar_enabled = any(site.enable_nav_sidebar for site in all_sites)
+        if (sidebar_enabled and 'django.template.context_processors.request'
+                not in django_templates_instance.context_processors):
+            errors.append(checks.Warning(
+                "'django.template.context_processors.request' must be enabled "
+                "in DjangoTemplates (TEMPLATES) in order to use the admin "
+                "navigation sidebar.",
+                id='admin.W411',
+            ))
 
     if not _contains_subclass('django.contrib.auth.middleware.AuthenticationMiddleware', settings.MIDDLEWARE):
         errors.append(checks.Error(
@@ -122,6 +132,12 @@ def check_dependencies(**kwargs):
         errors.append(checks.Error(
             "'django.contrib.sessions.middleware.SessionMiddleware' must "
             "be in MIDDLEWARE in order to use the admin application.",
+            hint=(
+                "Insert "
+                "'django.contrib.sessions.middleware.SessionMiddleware' "
+                "before "
+                "'django.contrib.auth.middleware.AuthenticationMiddleware'."
+            ),
             id='admin.E410',
         ))
     return errors
@@ -798,8 +814,7 @@ class ModelAdminChecks(BaseModelAdminChecks):
         2. ('field', SomeFieldListFilter) - a field-based list filter class
         3. SomeListFilter - a non-field list filter class
         """
-
-        from django.contrib.admin import ListFilter, FieldListFilter
+        from django.contrib.admin import FieldListFilter, ListFilter
 
         if callable(item) and not isinstance(item, models.Field):
             # If item is option 3, it should be a ListFilter...

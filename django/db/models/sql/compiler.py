@@ -6,7 +6,7 @@ from itertools import chain
 from django.core.exceptions import EmptyResultSet, FieldError
 from django.db import DatabaseError, NotSupportedError
 from django.db.models.constants import LOOKUP_SEP
-from django.db.models.expressions import OrderBy, Random, RawSQL, Ref, Value
+from django.db.models.expressions import F, OrderBy, Random, RawSQL, Ref, Value
 from django.db.models.functions import Cast
 from django.db.models.query_utils import Q, select_related_descend
 from django.db.models.sql.constants import (
@@ -139,6 +139,7 @@ class SQLCompiler:
 
         for expr in expressions:
             sql, params = self.compile(expr)
+            sql, params = expr.select_format(self, sql, params)
             params_hash = make_hashable(params)
             if (sql, params_hash) not in seen:
                 result.append((sql, params))
@@ -360,13 +361,16 @@ class SQLCompiler:
             resolved = expr.resolve_expression(self.query, allow_joins=True, reuse=None)
             if self.query.combinator:
                 src = resolved.get_source_expressions()[0]
+                expr_src = expr.get_source_expressions()[0]
                 # Relabel order by columns to raw numbers if this is a combined
                 # query; necessary since the columns can't be referenced by the
                 # fully qualified name and the simple column names may collide.
                 for idx, (sel_expr, _, col_alias) in enumerate(self.select):
                     if is_ref and col_alias == src.refs:
                         src = src.source
-                    elif col_alias:
+                    elif col_alias and not (
+                        isinstance(expr_src, F) and col_alias == expr_src.name
+                    ):
                         continue
                     if src == sel_expr:
                         resolved.set_source_expressions([RawSQL('%d' % (idx + 1), ())])
@@ -383,7 +387,7 @@ class SQLCompiler:
             # not taken into account so we strip it. When this entire method
             # is refactored into expressions, then we can check each part as we
             # generate it.
-            without_ordering = self.ordering_parts.search(sql).group(1)
+            without_ordering = self.ordering_parts.search(sql)[1]
             params_hash = make_hashable(params)
             if (without_ordering, params_hash) in seen:
                 continue
@@ -396,7 +400,7 @@ class SQLCompiler:
         if self.query.distinct and not self.query.distinct_fields:
             select_sql = [t[1] for t in select]
             for expr, (sql, params, is_ref) in order_by:
-                without_ordering = self.ordering_parts.search(sql).group(1)
+                without_ordering = self.ordering_parts.search(sql)[1]
                 if not is_ref and (without_ordering, params) not in select_sql:
                     extra_select.append((expr, (without_ordering, params), None))
         return extra_select
@@ -545,19 +549,26 @@ class SQLCompiler:
                     nowait = self.query.select_for_update_nowait
                     skip_locked = self.query.select_for_update_skip_locked
                     of = self.query.select_for_update_of
-                    # If it's a NOWAIT/SKIP LOCKED/OF query but the backend
-                    # doesn't support it, raise NotSupportedError to prevent a
-                    # possible deadlock.
+                    no_key = self.query.select_for_no_key_update
+                    # If it's a NOWAIT/SKIP LOCKED/OF/NO KEY query but the
+                    # backend doesn't support it, raise NotSupportedError to
+                    # prevent a possible deadlock.
                     if nowait and not self.connection.features.has_select_for_update_nowait:
                         raise NotSupportedError('NOWAIT is not supported on this database backend.')
                     elif skip_locked and not self.connection.features.has_select_for_update_skip_locked:
                         raise NotSupportedError('SKIP LOCKED is not supported on this database backend.')
                     elif of and not self.connection.features.has_select_for_update_of:
                         raise NotSupportedError('FOR UPDATE OF is not supported on this database backend.')
+                    elif no_key and not self.connection.features.has_select_for_no_key_update:
+                        raise NotSupportedError(
+                            'FOR NO KEY UPDATE is not supported on this '
+                            'database backend.'
+                        )
                     for_update_part = self.connection.ops.for_update_sql(
                         nowait=nowait,
                         skip_locked=skip_locked,
                         of=self.get_select_for_update_of_arguments(),
+                        no_key=no_key,
                     )
 
                 if for_update_part and self.connection.features.for_update_after_from:
@@ -716,7 +727,12 @@ class SQLCompiler:
         # If we get to this point and the field is a relation to another model,
         # append the default ordering for that model unless it is the pk
         # shortcut or the attribute name of the field that is specified.
-        if field.is_relation and opts.ordering and getattr(field, 'attname', None) != name and name != 'pk':
+        if (
+            field.is_relation and
+            opts.ordering and
+            getattr(field, 'attname', None) != pieces[-1] and
+            name != 'pk'
+        ):
             # Firstly, avoid infinite loops.
             already_seen = already_seen or set()
             join_tuple = tuple(getattr(self.query.alias_map[j], 'join_cols', None) for j in joins)
@@ -966,7 +982,8 @@ class SQLCompiler:
         the query.
         """
         def _get_parent_klass_info(klass_info):
-            for parent_model, parent_link in klass_info['model']._meta.parents.items():
+            concrete_model = klass_info['model']._meta.concrete_model
+            for parent_model, parent_link in concrete_model._meta.parents.items():
                 parent_list = parent_model._meta.get_parent_list()
                 yield {
                     'model': parent_model,
@@ -991,8 +1008,9 @@ class SQLCompiler:
             select_fields is filled recursively, so it also contains fields
             from the parent models.
             """
+            concrete_model = klass_info['model']._meta.concrete_model
             for select_index in klass_info['select_fields']:
-                if self.select[select_index][0].target.model == klass_info['model']:
+                if self.select[select_index][0].target.model == concrete_model:
                     return self.select[select_index][0]
 
         def _get_field_choices():
@@ -1109,9 +1127,6 @@ class SQLCompiler:
         Backends (e.g. NoSQL) can override this in order to use optimized
         versions of "query has any results."
         """
-        # This is always executed on a query clone, so we can modify self.query
-        self.query.add_extra({'a': 1}, None, None, None, None, None)
-        self.query.set_extra_mask(['a'])
         return bool(self.execute_sql(SINGLE))
 
     def execute_sql(self, result_type=MULTI, chunked_fetch=False, chunk_size=GET_ITERATOR_CHUNK_SIZE):
@@ -1399,6 +1414,8 @@ class SQLInsertCompiler(SQLCompiler):
 class SQLDeleteCompiler(SQLCompiler):
     @cached_property
     def single_alias(self):
+        # Ensure base table is in aliases.
+        self.query.get_initial_alias()
         return sum(self.query.alias_refcount[t] > 0 for t in self.query.alias_map) == 1
 
     def _as_sql(self, query):

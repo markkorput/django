@@ -4,7 +4,9 @@ import pickle
 import re
 import time
 
-from django.core.cache.backends.base import DEFAULT_TIMEOUT, BaseCache
+from django.core.cache.backends.base import (
+    DEFAULT_TIMEOUT, BaseCache, InvalidCacheKey, memcache_key_warnings,
+)
 from django.utils.functional import cached_property
 
 
@@ -16,10 +18,8 @@ class BaseMemcachedCache(BaseCache):
         else:
             self._servers = server
 
-        # The exception type to catch from the underlying library for a key
-        # that was not found. This is a ValueError for python-memcache,
-        # pylibmc.NotFound for pylibmc, and cmemcache will return None without
-        # raising an exception.
+        # Exception type raised by the underlying client library for a
+        # nonexistent key.
         self.LibraryValueNotFoundException = value_not_found_exception
 
         self._lib = library
@@ -64,24 +64,34 @@ class BaseMemcachedCache(BaseCache):
 
     def add(self, key, value, timeout=DEFAULT_TIMEOUT, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         return self._cache.add(key, value, self.get_backend_timeout(timeout))
 
     def get(self, key, default=None, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         return self._cache.get(key, default)
 
     def set(self, key, value, timeout=DEFAULT_TIMEOUT, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         if not self._cache.set(key, value, self.get_backend_timeout(timeout)):
             # make sure the key doesn't keep its old value in case of failure to set (memcached's 1MB limit)
             self._cache.delete(key)
 
+    def touch(self, key, timeout=DEFAULT_TIMEOUT, version=None):
+        key = self.make_key(key, version=version)
+        return bool(self._cache.touch(key, self.get_backend_timeout(timeout)))
+
     def delete(self, key, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         return bool(self._cache.delete(key))
 
     def get_many(self, keys, version=None):
         key_map = {self.make_key(key, version=version): key for key in keys}
+        for key in key_map:
+            self.validate_key(key)
         ret = self._cache.get_multi(key_map.keys())
         return {key_map[k]: v for k, v in ret.items()}
 
@@ -91,16 +101,15 @@ class BaseMemcachedCache(BaseCache):
 
     def incr(self, key, delta=1, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         # memcached doesn't support a negative delta
         if delta < 0:
             return self._cache.decr(key, -delta)
         try:
             val = self._cache.incr(key, delta)
 
-        # python-memcache responds to incr on nonexistent keys by
-        # raising a ValueError, pylibmc by raising a pylibmc.NotFound
-        # and Cmemcache returns None. In all cases,
-        # we should raise a ValueError though.
+        # Normalize an exception raised by the underlying client library to
+        # ValueError in the event of a nonexistent key when calling incr().
         except self.LibraryValueNotFoundException:
             val = None
         if val is None:
@@ -109,16 +118,15 @@ class BaseMemcachedCache(BaseCache):
 
     def decr(self, key, delta=1, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         # memcached doesn't support a negative delta
         if delta < 0:
             return self._cache.incr(key, -delta)
         try:
             val = self._cache.decr(key, delta)
 
-        # python-memcache responds to incr on nonexistent keys by
-        # raising a ValueError, pylibmc by raising a pylibmc.NotFound
-        # and Cmemcache returns None. In all cases,
-        # we should raise a ValueError though.
+        # Normalize an exception raised by the underlying client library to
+        # ValueError in the event of a nonexistent key when calling decr().
         except self.LibraryValueNotFoundException:
             val = None
         if val is None:
@@ -130,6 +138,7 @@ class BaseMemcachedCache(BaseCache):
         original_keys = {}
         for key, value in data.items():
             safe_key = self.make_key(key, version=version)
+            self.validate_key(safe_key)
             safe_data[safe_key] = value
             original_keys[safe_key] = key
         failed_keys = self._cache.set_multi(safe_data, self.get_backend_timeout(timeout))
@@ -141,10 +150,16 @@ class BaseMemcachedCache(BaseCache):
     def clear(self):
         self._cache.flush_all()
 
+    def validate_key(self, key):
+        for warning in memcache_key_warnings(key):
+            raise InvalidCacheKey(warning)
+
 
 class MemcachedCache(BaseMemcachedCache):
     "An implementation of a cache binding using python-memcached"
     def __init__(self, server, params):
+        # python-memcached ≥ 1.45 returns None for a nonexistent key in
+        # incr/decr(), python-memcached < 1.45 raises ValueError.
         import memcache
         super().__init__(server, params, library=memcache, value_not_found_exception=ValueError)
 
@@ -155,10 +170,6 @@ class MemcachedCache(BaseMemcachedCache):
             client_kwargs.update(self._options)
             self._client = self._lib.Client(self._servers, **client_kwargs)
         return self._client
-
-    def touch(self, key, timeout=DEFAULT_TIMEOUT, version=None):
-        key = self.make_key(key, version=version)
-        return self._cache.touch(key, self.get_backend_timeout(timeout)) != 0
 
     def get(self, key, default=None, version=None):
         key = self.make_key(key, version=version)

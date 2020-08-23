@@ -2,8 +2,6 @@
 Asynchronous support
 ====================
 
-.. versionadded:: 3.0
-
 .. currentmodule:: asgiref.sync
 
 Django has support for writing asynchronous ("async") views, along with an
@@ -41,7 +39,7 @@ class-based view, this means making its ``__call__()`` method an ``async def``
     to ``asyncio.coroutines._is_coroutine`` so this function returns ``True``.
 
 Under a WSGI server, async views will run in their own, one-off event loop.
-This means you can use async features, like parallel async HTTP requests,
+This means you can use async features, like concurrent async HTTP requests,
 without any issues, but you will not get the benefits of an async stack.
 
 The main benefits are the ability to service hundreds of connections without
@@ -62,10 +60,10 @@ If you want to use these, you will need to deploy Django using
     <async-middleware>` contexts. Some of Django's middleware is built like
     this, but not all. To see what middleware Django has to adapt, you can turn
     on debug logging for the ``django.request`` logger and look for log
-    messages about *`"Synchronous middleware ... adapted"*.
+    messages about *"Synchronous middleware ... adapted"*.
 
 In both ASGI and WSGI mode, you can still safely use asynchronous support to
-run code in parallel rather than serially. This is especially handy when
+run code concurrently rather than serially. This is especially handy when
 dealing with external APIs or data stores.
 
 If you want to call a part of Django that is still synchronous, like the ORM,
@@ -120,6 +118,8 @@ mode if you have asynchronous code in your project.
 Async safety
 ============
 
+.. envvar:: DJANGO_ALLOW_ASYNC_UNSAFE
+
 Certain key parts of Django are not able to operate safely in an async
 environment, as they have global state that is not coroutine-aware. These parts
 of Django are classified as "async-unsafe", and are protected from execution in
@@ -146,7 +146,7 @@ if the requirement is forced on you by an external environment, such as in a
 Jupyter_ notebook. If you are sure there is no chance of the code being run
 concurrently, and you *absolutely* need to run this sync code from an async
 context, then you can disable the warning by setting the
-``DJANGO_ALLOW_ASYNC_UNSAFE`` environment variable to any value.
+:envvar:`DJANGO_ALLOW_ASYNC_UNSAFE` environment variable to any value.
 
 .. warning::
 

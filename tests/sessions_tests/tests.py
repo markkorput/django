@@ -36,7 +36,8 @@ from django.core.cache.backends.base import InvalidCacheBackendError
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.http import HttpResponse
 from django.test import (
-    RequestFactory, TestCase, ignore_warnings, override_settings,
+    RequestFactory, SimpleTestCase, TestCase, ignore_warnings,
+    override_settings,
 )
 from django.utils import timezone
 from django.utils.deprecation import RemovedInDjango40Warning
@@ -339,12 +340,24 @@ class SessionTestsMixin:
             {'a test key': 'a test value'},
         )
 
+    @ignore_warnings(category=RemovedInDjango40Warning)
+    def test_default_hashing_algorith_legacy_decode(self):
+        with self.settings(DEFAULT_HASHING_ALGORITHM='sha1'):
+            data = {'a test key': 'a test value'}
+            encoded = self.session.encode(data)
+            self.assertEqual(self.session._legacy_decode(encoded), data)
+
     def test_decode_failure_logged_to_security(self):
-        bad_encode = base64.b64encode(b'flaskdj:alkdjf').decode('ascii')
-        with self.assertLogs('django.security.SuspiciousSession', 'WARNING') as cm:
-            self.assertEqual({}, self.session.decode(bad_encode))
-        # The failed decode is logged.
-        self.assertIn('corrupted', cm.output[0])
+        tests = [
+            base64.b64encode(b'flaskdj:alkdjf').decode('ascii'),
+            'bad:encoded:value',
+        ]
+        for encoded in tests:
+            with self.subTest(encoded=encoded):
+                with self.assertLogs('django.security.SuspiciousSession', 'WARNING') as cm:
+                    self.assertEqual(self.session.decode(encoded), {})
+                # The failed decode is logged.
+                self.assertIn('Session data corrupted', cm.output[0])
 
     def test_actual_expiry(self):
         # this doesn't work with JSONSerializer (serializing timedelta)
@@ -1300,8 +1313,9 @@ class SessionMiddlewareTests(TestCase):
         #  Set-Cookie: sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/
         self.assertEqual(
             'Set-Cookie: {}=""; expires=Thu, 01 Jan 1970 00:00:00 GMT; '
-            'Max-Age=0; Path=/'.format(
+            'Max-Age=0; Path=/; SameSite={}'.format(
                 settings.SESSION_COOKIE_NAME,
+                settings.SESSION_COOKIE_SAMESITE,
             ),
             str(response.cookies[settings.SESSION_COOKIE_NAME])
         )
@@ -1331,8 +1345,9 @@ class SessionMiddlewareTests(TestCase):
         #              Path=/example/
         self.assertEqual(
             'Set-Cookie: {}=""; Domain=.example.local; expires=Thu, '
-            '01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/example/'.format(
+            '01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/example/; SameSite={}'.format(
                 settings.SESSION_COOKIE_NAME,
+                settings.SESSION_COOKIE_SAMESITE,
             ),
             str(response.cookies[settings.SESSION_COOKIE_NAME])
         )
@@ -1405,8 +1420,7 @@ class SessionMiddlewareTests(TestCase):
         settings.SESSION_ENGINE = original_engine
 
 
-# Don't need DB flushing for these tests, so can use unittest.TestCase as base class
-class CookieSessionTests(SessionTestsMixin, unittest.TestCase):
+class CookieSessionTests(SessionTestsMixin, SimpleTestCase):
 
     backend = CookieSession
 

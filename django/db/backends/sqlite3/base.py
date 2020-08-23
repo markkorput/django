@@ -73,7 +73,6 @@ Database.register_converter("bool", b'1'.__eq__)
 Database.register_converter("time", decoder(parse_time))
 Database.register_converter("datetime", decoder(parse_datetime))
 Database.register_converter("timestamp", decoder(parse_datetime))
-Database.register_converter("TIMESTAMP", decoder(parse_datetime))
 
 Database.register_adapter(decimal.Decimal, str)
 
@@ -101,6 +100,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'BigIntegerField': 'bigint',
         'IPAddressField': 'char(15)',
         'GenericIPAddressField': 'char(39)',
+        'JSONField': 'text',
         'NullBooleanField': 'bool',
         'OneToOneField': 'integer',
         'PositiveBigIntegerField': 'bigint unsigned',
@@ -115,6 +115,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     }
     data_type_check_constraints = {
         'PositiveBigIntegerField': '"%(column)s" >= 0',
+        'JSONField': '(JSON_VALID("%(column)s") OR "%(column)s" IS NULL)',
         'PositiveIntegerField': '"%(column)s" >= 0',
         'PositiveSmallIntegerField': '"%(column)s" >= 0',
     }

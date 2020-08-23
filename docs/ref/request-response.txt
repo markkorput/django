@@ -43,8 +43,10 @@ All attributes should be considered read-only, unless stated otherwise.
     XML payload etc. For processing conventional form data, use
     :attr:`HttpRequest.POST`.
 
-    You can also read from an ``HttpRequest`` using a file-like interface. See
-    :meth:`HttpRequest.read()`.
+    You can also read from an ``HttpRequest`` using a file-like interface with
+    :meth:`HttpRequest.read` or :meth:`HttpRequest.readline`. Accessing
+    the ``body`` attribute *after* reading the request with either of these I/O
+    stream methods will produce a ``RawPostDataException``.
 
 .. attribute:: HttpRequest.path
 
@@ -201,10 +203,6 @@ All attributes should be considered read-only, unless stated otherwise.
     using underscores in place of hyphens::
 
         {{ request.headers.user_agent }}
-
-    .. versionchanged:: 3.0
-
-        Support for lookups using underscores was added.
 
 .. attribute:: HttpRequest.resolver_match
 
@@ -684,10 +682,6 @@ or :class:`memoryview`, to the :class:`HttpResponse` constructor::
     >>> response = HttpResponse(b'Bytestrings are also accepted.')
     >>> response = HttpResponse(memoryview(b'Memoryview as well.'))
 
-.. versionchanged:: 3.0
-
-    Support for :class:`memoryview` was added.
-
 But if you want to add content incrementally, you can use ``response`` as a
 file-like object::
 
@@ -812,10 +806,6 @@ Methods
     given it will be extracted from ``content_type``, and if that
     is unsuccessful, the :setting:`DEFAULT_CHARSET` setting will be used.
 
-    .. versionchanged:: 3.0
-
-        Support for :class:`memoryview` ``content`` was added.
-
 .. method:: HttpResponse.__setitem__(header, value)
 
     Sets the given header name to the given value. Both ``header`` and
@@ -872,7 +862,7 @@ Methods
       Use ``samesite='None'`` (string) to explicitly state that this cookie is
       sent with all same-site and cross-site requests.
 
-    .. _HttpOnly: https://www.owasp.org/index.php/HttpOnly
+    .. _HttpOnly: https://owasp.org/www-community/HttpOnly
     .. _SameSite: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite
 
     .. versionchanged:: 3.1
@@ -900,7 +890,7 @@ Methods
 
         Using ``samesite='None'`` (string) was allowed.
 
-.. method:: HttpResponse.delete_cookie(key, path='/', domain=None)
+.. method:: HttpResponse.delete_cookie(key, path='/', domain=None, samesite=None)
 
     Deletes the cookie with the given key. Fails silently if the key doesn't
     exist.
@@ -908,6 +898,10 @@ Methods
     Due to the way cookies work, ``path`` and ``domain`` should be the same
     values you used in ``set_cookie()`` -- otherwise the cookie may not be
     deleted.
+
+    .. versionchanged:: 2.2.15
+
+        The ``samesite`` argument was added.
 
 .. method:: HttpResponse.close()
 
@@ -1040,7 +1034,7 @@ can create it with the help of :py:class:`http.HTTPStatus`. For example::
     response. It inherits most behavior from its superclass with a couple
     differences:
 
-    Its default ``Content-Type`` header is set to ``application/json``.
+    Its default ``Content-Type`` header is set to :mimetype:`application/json`.
 
     The first parameter, ``data``, should be a ``dict`` instance. If the
     ``safe`` parameter is set to ``False`` (see below) it can be any
@@ -1122,7 +1116,7 @@ The :class:`StreamingHttpResponse` is not a subclass of :class:`HttpResponse`,
 because it features a slightly different API. However, it is almost identical,
 with the following notable differences:
 
-* It should be given an iterator that yields strings as content.
+* It should be given an iterator that yields bytestrings as content.
 
 * You cannot access its content, except by iterating the response object
   itself. This should only occur when the response is returned to the client.
@@ -1173,8 +1167,9 @@ Attributes
 .. class:: FileResponse(open_file, as_attachment=False, filename='', **kwargs)
 
     :class:`FileResponse` is a subclass of :class:`StreamingHttpResponse`
-    optimized for binary files. It uses `wsgi.file_wrapper`_ if provided by the
-    wsgi server, otherwise it streams the file out in small chunks.
+    optimized for binary files. It uses :pep:`wsgi.file_wrapper
+    <3333#optional-platform-specific-file-handling>` if provided by the wsgi
+    server, otherwise it streams the file out in small chunks.
 
     If ``as_attachment=True``, the ``Content-Disposition`` header is set to
     ``attachment``, which asks the browser to offer the file to the user as a
@@ -1189,8 +1184,6 @@ Attributes
 
     The ``Content-Length`` and ``Content-Type`` headers are automatically set
     when they can be guessed from contents of ``open_file``.
-
-.. _wsgi.file_wrapper: https://www.python.org/dev/peps/pep-3333/#optional-platform-specific-file-handling
 
 ``FileResponse`` accepts any file-like object with binary content, for example
 a file open in binary mode like so::
