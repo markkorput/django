@@ -23,17 +23,19 @@ class BaseMemcachedCache(BaseCache):
         self.LibraryValueNotFoundException = value_not_found_exception
 
         self._lib = library
+        self._class = library.Client
         self._options = params.get('OPTIONS') or {}
 
     @property
+    def client_servers(self):
+        return self._servers
+
+    @cached_property
     def _cache(self):
         """
         Implement transparent thread-safe access to a memcached client.
         """
-        if getattr(self, '_client', None) is None:
-            self._client = self._lib.Client(self._servers, **self._options)
-
-        return self._client
+        return self._class(self.client_servers, **self._options)
 
     def get_backend_timeout(self, timeout=DEFAULT_TIMEOUT):
         """
@@ -81,6 +83,7 @@ class BaseMemcachedCache(BaseCache):
 
     def touch(self, key, timeout=DEFAULT_TIMEOUT, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         return bool(self._cache.touch(key, self.get_backend_timeout(timeout)))
 
     def delete(self, key, version=None):
@@ -145,7 +148,10 @@ class BaseMemcachedCache(BaseCache):
         return [original_keys[k] for k in failed_keys]
 
     def delete_many(self, keys, version=None):
-        self._cache.delete_multi(self.make_key(key, version=version) for key in keys)
+        keys = [self.make_key(key, version=version) for key in keys]
+        for key in keys:
+            self.validate_key(key)
+        self._cache.delete_multi(keys)
 
     def clear(self):
         self._cache.flush_all()
@@ -162,17 +168,11 @@ class MemcachedCache(BaseMemcachedCache):
         # incr/decr(), python-memcached < 1.45 raises ValueError.
         import memcache
         super().__init__(server, params, library=memcache, value_not_found_exception=ValueError)
-
-    @property
-    def _cache(self):
-        if getattr(self, '_client', None) is None:
-            client_kwargs = {'pickleProtocol': pickle.HIGHEST_PROTOCOL}
-            client_kwargs.update(self._options)
-            self._client = self._lib.Client(self._servers, **client_kwargs)
-        return self._client
+        self._options = {'pickleProtocol': pickle.HIGHEST_PROTOCOL, **self._options}
 
     def get(self, key, default=None, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         val = self._cache.get(key)
         # python-memcached doesn't support default values in get().
         # https://github.com/linsomniac/python-memcached/issues/159
@@ -186,6 +186,7 @@ class MemcachedCache(BaseMemcachedCache):
         # https://github.com/linsomniac/python-memcached/issues/170
         # Call _deletetouch() without the NOT_FOUND in expected results.
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         return bool(self._cache._deletetouch([b'DELETED'], 'delete', key))
 
 
@@ -195,12 +196,16 @@ class PyLibMCCache(BaseMemcachedCache):
         import pylibmc
         super().__init__(server, params, library=pylibmc, value_not_found_exception=pylibmc.NotFound)
 
-    @cached_property
-    def _cache(self):
-        return self._lib.Client(self._servers, **self._options)
+    @property
+    def client_servers(self):
+        output = []
+        for server in self._servers:
+            output.append(server[5:] if server.startswith('unix:') else server)
+        return output
 
     def touch(self, key, timeout=DEFAULT_TIMEOUT, version=None):
         key = self.make_key(key, version=version)
+        self.validate_key(key)
         if timeout == 0:
             return self._cache.delete(key)
         return self._cache.touch(key, self.get_backend_timeout(timeout))
